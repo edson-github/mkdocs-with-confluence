@@ -113,8 +113,7 @@ class MkdocsWithConfluence(BasePlugin):
 
     def on_config(self, config):
         if "enabled_if_env" in self.config:
-            env_name = self.config["enabled_if_env"]
-            if env_name:
+            if env_name := self.config["enabled_if_env"]:
                 self.enabled = os.environ.get(env_name) == "1"
                 if not self.enabled:
                     print(
@@ -151,9 +150,9 @@ class MkdocsWithConfluence(BasePlugin):
         if self.enabled:
             if self.simple_log is True:
                 print("INFO    - Mkdocs With Confluence: Page export progress: [", end="", flush=True)
-                for i in range(MkdocsWithConfluence._id):
+                for _ in range(MkdocsWithConfluence._id):
                     print("#", end="", flush=True)
-                for j in range(self.flen - MkdocsWithConfluence._id):
+                for _ in range(self.flen - MkdocsWithConfluence._id):
                     print("-", end="", flush=True)
                 print(f"] ({MkdocsWithConfluence._id} / {self.flen})", end="\r", flush=True)
 
@@ -212,38 +211,35 @@ class MkdocsWithConfluence(BasePlugin):
                     print(f"DEBUG    - PARENT0: {parent}, PARENT1: {parent1}, MAIN PARENT: {main_parent}")
 
                 tf = tempfile.NamedTemporaryFile(delete=False)
-                f = open(tf.name, "w")
+                with open(tf.name, "w") as f:
+                    attachments = []
+                    try:
+                        for match in re.finditer(r'img src="file://(.*)" s', markdown):
+                            if self.config["debug"]:
+                                print(f"DEBUG    - FOUND IMAGE: {match.group(1)}")
+                            attachments.append(match.group(1))
+                        for match in re.finditer(r"!\[[\w\. -]*\]\((?!http|file)([^\s,]*).*\)", markdown):
+                            file_path = match.group(1).lstrip("./\\")
+                            attachments.append(file_path)
 
-                attachments = []
-                try:
-                    for match in re.finditer(r'img src="file://(.*)" s', markdown):
+                            if self.config["debug"]:
+                                print(f"DEBUG    - FOUND IMAGE: {file_path}")
+                            attachments.append("docs/" + file_path.replace("../", ""))
+
+                    except AttributeError as e:
                         if self.config["debug"]:
-                            print(f"DEBUG    - FOUND IMAGE: {match.group(1)}")
-                        attachments.append(match.group(1))
-                    for match in re.finditer(r"!\[[\w\. -]*\]\((?!http|file)([^\s,]*).*\)", markdown):
-                        file_path = match.group(1).lstrip("./\\")
-                        attachments.append(file_path)
-
-                        if self.config["debug"]:
-                            print(f"DEBUG    - FOUND IMAGE: {file_path}")
-                        attachments.append("docs/" + file_path.replace("../", ""))
-
-                except AttributeError as e:
+                            print(f"DEBUG    - WARN(({e}): No images found in markdown. Proceed..")
+                    new_markdown = re.sub(
+                        r'<img src="file:///tmp/', '<p><ac:image ac:height="350"><ri:attachment ri:filename="', markdown
+                    )
+                    new_markdown = re.sub(r'" style="page-break-inside: avoid;">', '"/></ac:image></p>', new_markdown)
+                    confluence_body = self.confluence_mistune(new_markdown)
+                    f.write(confluence_body)
                     if self.config["debug"]:
-                        print(f"DEBUG    - WARN(({e}): No images found in markdown. Proceed..")
-                new_markdown = re.sub(
-                    r'<img src="file:///tmp/', '<p><ac:image ac:height="350"><ri:attachment ri:filename="', markdown
-                )
-                new_markdown = re.sub(r'" style="page-break-inside: avoid;">', '"/></ac:image></p>', new_markdown)
-                confluence_body = self.confluence_mistune(new_markdown)
-                f.write(confluence_body)
-                if self.config["debug"]:
-                    print(confluence_body)
-                page_name = page.title
-                new_name = "confluence_page_" + page_name.replace(" ", "_") + ".html"
-                shutil.copy(f.name, new_name)
-                f.close()
-
+                        print(confluence_body)
+                    page_name = page.title
+                    new_name = "confluence_page_" + page_name.replace(" ", "_") + ".html"
+                    shutil.copy(f.name, new_name)
                 if self.config["debug"]:
                     print(
                         f"\nDEBUG    - UPDATING PAGE TO CONFLUENCE, DETAILS:\n"
@@ -408,12 +404,10 @@ class MkdocsWithConfluence(BasePlugin):
         print(f"INFO    - Mkdocs With Confluence * {page_name} *ADD/Update ATTACHMENT if required* {filepath}")
         if self.config["debug"]:
             print(f" * Mkdocs With Confluence: Add Attachment: PAGE NAME: {page_name}, FILE: {filepath}")
-        page_id = self.find_page_id(page_name)
-        if page_id:
+        if page_id := self.find_page_id(page_name):
             file_hash = self.get_file_sha1(filepath)
             attachment_message = f"MKDocsWithConfluence [v{file_hash}]"
-            existing_attachment = self.get_attachment(page_id, filepath)
-            if existing_attachment:
+            if existing_attachment := self.get_attachment(page_id, filepath):
                 file_hash_regex = re.compile(r"\[v([a-f0-9]{40})]$")
                 existing_match = file_hash_regex.search(existing_attachment["version"]["message"])
                 if existing_match is not None and existing_match.group(1) == file_hash:
@@ -423,9 +417,8 @@ class MkdocsWithConfluence(BasePlugin):
                     self.update_attachment(page_id, filepath, existing_attachment, attachment_message)
             else:
                 self.create_attachment(page_id, filepath, attachment_message)
-        else:
-            if self.config["debug"]:
-                print("PAGE DOES NOT EXISTS")
+        elif self.config["debug"]:
+            print("PAGE DOES NOT EXISTS")
 
     def get_attachment(self, page_id, filepath):
         name = os.path.basename(filepath)
@@ -449,8 +442,6 @@ class MkdocsWithConfluence(BasePlugin):
             print(f" * Mkdocs With Confluence: Update Attachment: PAGE ID: {page_id}, FILE: {filepath}")
 
         url = self.config["host_url"] + "/" + page_id + "/child/attachment/" + existing_attachment["id"] + "/data"
-        headers = {"X-Atlassian-Token": "no-check"}  # no content-type here!
-
         if self.config["debug"]:
             print(f"URL: {url}")
 
@@ -463,6 +454,8 @@ class MkdocsWithConfluence(BasePlugin):
         files = {"file": (filename, open(Path(filepath), "rb"), content_type), "comment": message}
 
         if not self.dryrun:
+            headers = {"X-Atlassian-Token": "no-check"}  # no content-type here!
+
             r = self.session.post(url, headers=headers, files=files)
             r.raise_for_status()
             print(r.json())
@@ -476,8 +469,6 @@ class MkdocsWithConfluence(BasePlugin):
             print(f" * Mkdocs With Confluence: Create Attachment: PAGE ID: {page_id}, FILE: {filepath}")
 
         url = self.config["host_url"] + "/" + page_id + "/child/attachment"
-        headers = {"X-Atlassian-Token": "no-check"}  # no content-type here!
-
         if self.config["debug"]:
             print(f"URL: {url}")
 
@@ -489,6 +480,8 @@ class MkdocsWithConfluence(BasePlugin):
             content_type = "multipart/form-data"
         files = {"file": (filename, open(filepath, "rb"), content_type), "comment": message}
         if not self.dryrun:
+            headers = {"X-Atlassian-Token": "no-check"}  # no content-type here!
+
             r = self.session.post(url, headers=headers, files=files)
             print(r.json())
             r.raise_for_status()
@@ -525,7 +518,6 @@ class MkdocsWithConfluence(BasePlugin):
         url = self.config["host_url"] + "/"
         if self.config["debug"]:
             print(f"URL: {url}")
-        headers = {"Content-Type": "application/json"}
         space = self.config["space"]
         data = {
             "type": "page",
@@ -537,13 +529,13 @@ class MkdocsWithConfluence(BasePlugin):
         if self.config["debug"]:
             print(f"DATA: {data}")
         if not self.dryrun:
+            headers = {"Content-Type": "application/json"}
             r = self.session.post(url, json=data, headers=headers)
             r.raise_for_status()
-            if r.status_code == 200:
-                if self.config["debug"]:
+            if self.config["debug"]:
+                if r.status_code == 200:
                     print("OK!")
-            else:
-                if self.config["debug"]:
+                else:
                     print("ERR!")
 
     def update_page(self, page_name, page_content_in_storage_format):
@@ -553,12 +545,11 @@ class MkdocsWithConfluence(BasePlugin):
             print(f" * Mkdocs With Confluence: Update PAGE ID: {page_id}, PAGE NAME: {page_name}")
         if page_id:
             page_version = self.find_page_version(page_name)
-            page_version = page_version + 1
             url = self.config["host_url"] + "/" + page_id
             if self.config["debug"]:
                 print(f"URL: {url}")
-            headers = {"Content-Type": "application/json"}
             space = self.config["space"]
+            page_version = page_version + 1
             data = {
                 "id": page_id,
                 "title": page_name,
@@ -569,17 +560,16 @@ class MkdocsWithConfluence(BasePlugin):
             }
 
             if not self.dryrun:
+                headers = {"Content-Type": "application/json"}
                 r = self.session.put(url, json=data, headers=headers)
                 r.raise_for_status()
-                if r.status_code == 200:
-                    if self.config["debug"]:
+                if self.config["debug"]:
+                    if r.status_code == 200:
                         print("OK!")
-                else:
-                    if self.config["debug"]:
+                    else:
                         print("ERR!")
-        else:
-            if self.config["debug"]:
-                print("PAGE DOES NOT EXIST YET!")
+        elif self.config["debug"]:
+            print("PAGE DOES NOT EXIST YET!")
 
     def find_page_version(self, page_name):
         if self.config["debug"]:
