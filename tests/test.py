@@ -11,7 +11,7 @@ PASSWORD = "<YOUR_PASSWORD>"
 
 
 def upload_attachment(page_id, filepath):
-    url = BASE_URL + "/" + page_id + "/child/attachment/"
+    url = f"{BASE_URL}/{page_id}/child/attachment/"
     headers = {"X-Atlassian-Token": "no-check"}  # no content-type here!
     print(f"URL: {url}")
     filename = filepath
@@ -32,14 +32,13 @@ def upload_attachment(page_id, filepath):
 
 def find_parent_name_of_page(name):
     idp = find_page_id(name)
-    url = BASE_URL + "/" + idp + "?expand=ancestors"
+    url = f"{BASE_URL}/{idp}?expand=ancestors"
     print(f"URL: {url}")
 
     auth = (USERNAME, PASSWORD)
     r = requests.get(url, auth=auth)
     r.raise_for_status()
-    response_json = r.json()
-    if response_json:
+    if response_json := r.json():
         print(f"ID: {response_json['ancestors'][0]['title']}")
         return response_json
     else:
@@ -49,7 +48,7 @@ def find_parent_name_of_page(name):
 
 def find_page_id(name):
     name_confl = name.replace(" ", "+")
-    url = BASE_URL + "?title=" + name_confl + "&spaceKey=" + SPACE_NAME + "&expand=history"
+    url = f"{BASE_URL}?title={name_confl}&spaceKey={SPACE_NAME}&expand=history"
     print(f"URL: {url}")
 
     auth = (USERNAME, PASSWORD)
@@ -65,7 +64,7 @@ def find_page_id(name):
 
 
 def add_page(page_name, parent_page_id):
-    url = BASE_URL + "/"
+    url = f"{BASE_URL}/"
     print(f"URL: {url}")
     headers = {"Content-Type": "application/json"}
     auth = (USERNAME, PASSWORD)
@@ -83,24 +82,28 @@ def add_page(page_name, parent_page_id):
 
 
 def update_page(page_name):
-    page_id = find_page_id(page_name)
-    if page_id:
+    if page_id := find_page_id(page_name):
         page_version = find_page_version(page_name)
         page_version = page_version + 1
         print(f"PAGE ID: {page_id}, PAGE NAME: {page_name}")
-        url = BASE_URL + "/" + page_id
+        url = f"{BASE_URL}/{page_id}"
         print(f"URL: {url}")
         headers = {"Content-Type": "application/json"}
         auth = (USERNAME, PASSWORD)
         data = {
             "type": "page",
             "space": {"key": SPACE_NAME},
-            "body": {"storage": {"value": "<p>Let the dragons out!</p>", "representation": "storage"}},
+            "body": {
+                "storage": {
+                    "value": "<p>Let the dragons out!</p>",
+                    "representation": "storage",
+                }
+            },
             "version": {"number": page_version},
+            "id": page_id,
+            "title": page_name,
         }
 
-        data["id"] = page_id
-        data["title"] = page_name
         print(data)
 
         r = requests.put(url, json=data, headers=headers, auth=auth)
@@ -113,7 +116,7 @@ def update_page(page_name):
 
 def find_page_version(name):
     name_confl = name.replace(" ", "+")
-    url = BASE_URL + "?title=" + name_confl + "&spaceKey=" + SPACE_NAME + "&expand=version"
+    url = f"{BASE_URL}?title={name_confl}&spaceKey={SPACE_NAME}&expand=version"
 
     print(f"URL: {url}")
 
